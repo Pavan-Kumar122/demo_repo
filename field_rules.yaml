@@ -1,0 +1,305 @@
+# field_rules.yaml
+# -----------------
+# Defines which JIL fields must be present and correctly mapped
+# in the Stonebranch UAC JSON for each job type.
+#
+# severity:
+#   fail   → Missing or wrong = ❌ FAIL
+#   review → Missing or differs = ⚠️ REVIEW
+#   info   → Informational only, no bucket impact
+#
+# match_type:
+#   exact        → Values must match exactly (case-insensitive)
+#   normalised   → Normalise path separators / whitespace before comparing
+#   type_map     → Value must match via mapping_rules.yaml
+#   exists       → Field just needs to be non-empty
+#   numeric      → Numeric equivalence (allow int/float comparison)
+#   bool         → Boolean equivalence (1/yes/true all treated as true)
+#   condition    → Special condition parsing logic
+#   schedule     → Special schedule/cron equivalence logic
+
+# ---------------------------------------------------------------------------
+# CMD → taskUnix / taskWindows
+# ---------------------------------------------------------------------------
+CMD:
+  required_fields:
+    - jil_field:   "job_name"
+      uac_field:   "name"
+      match_type:  "exact"
+      severity:    "fail"
+      description: "Job name must match exactly"
+
+    - jil_field:   "job_type"
+      uac_field:   "type"
+      match_type:  "type_map"
+      severity:    "fail"
+      description: "Must map to taskUnix or taskWindows"
+
+    - jil_field:   "command"
+      uac_field:   "command"
+      match_type:  "normalised"
+      severity:    "fail"
+      description: "Command / script path must be present"
+      missing_severity: "fail"
+      differs_severity: "review"       # Present but different path = REVIEW
+
+    - jil_field:   "machine"
+      uac_field:   "agentVar"
+      match_type:  "exists"
+      severity:    "review"
+      description: "Universal Agent must be specified"
+
+  soft_fields:
+    - jil_field:   "owner"
+      uac_field:   "credentials"
+      match_type:  "exists"
+      severity:    "review"
+      description: "Credentials alias should be set"
+
+    - jil_field:   "condition"
+      uac_field:   "successCheckCondition"
+      match_type:  "condition"
+      severity:    "fail"
+      description: "All dependency conditions must map to UAC equivalents"
+
+    - jil_field:   "start_times"
+      uac_field:   "triggers"
+      match_type:  "schedule"
+      severity:    "fail"
+      description: "If start_times set in JIL, a UAC trigger must exist"
+
+    - jil_field:   "days_of_week"
+      uac_field:   "triggers"
+      match_type:  "schedule"
+      severity:    "review"
+      description: "Day-of-week restrictions must be reflected in trigger"
+
+    - jil_field:   "run_calendar"
+      uac_field:   "triggers"
+      match_type:  "exists"
+      severity:    "review"
+      description: "Calendar must be attached to trigger"
+
+    - jil_field:   "exclude_calendar"
+      uac_field:   "N/A"
+      match_type:  "exists"
+      severity:    "review"
+      always_review: true
+      description: "exclude_calendar has no direct UAC equivalent — always flag"
+
+    - jil_field:   "std_out_file"
+      uac_field:   "stdoutLogFile"
+      match_type:  "exists"
+      severity:    "review"
+      description: "Stdout log file path should be set"
+
+    - jil_field:   "std_err_file"
+      uac_field:   "stderrLogFile"
+      match_type:  "exists"
+      severity:    "review"
+      description: "Stderr log file path should be set"
+
+    - jil_field:   "alarm_if_fail"
+      uac_field:   "failureAction"
+      match_type:  "bool"
+      severity:    "review"
+      description: "Failure alarm must map to a UAC failure action"
+
+    - jil_field:   "alarm_if_terminated"
+      uac_field:   "actions"
+      match_type:  "bool"
+      severity:    "review"
+      description: "Terminated alarm should map to a UAC cancelled action"
+
+    - jil_field:   "max_run_alarm"
+      uac_field:   "lateFinishDuration"
+      match_type:  "numeric"
+      severity:    "review"
+      description: "Max run alarm should map to Late Finish duration"
+
+    - jil_field:   "min_run_alarm"
+      uac_field:   "earlyFinishDuration"
+      match_type:  "numeric"
+      severity:    "review"
+      description: "Min run alarm should map to Early Finish duration"
+
+    - jil_field:   "must_start_times"
+      uac_field:   "lateStart"
+      match_type:  "exists"
+      severity:    "fail"
+      description: "must_start_times must map to UAC Late Start — business SLA"
+
+    - jil_field:   "must_complete_times"
+      uac_field:   "lateFinish"
+      match_type:  "exists"
+      severity:    "fail"
+      description: "must_complete_times must map to UAC Late Finish — business SLA"
+
+    - jil_field:   "exitcode"
+      uac_field:   "exitCodes"
+      match_type:  "exists"
+      severity:    "fail"
+      description: "Exit code condition must be preserved"
+
+    - jil_field:   "description"
+      uac_field:   "description"
+      match_type:  "exists"
+      severity:    "info"
+      description: "Description is informational"
+
+# ---------------------------------------------------------------------------
+# BOX → workflow
+# ---------------------------------------------------------------------------
+BOX:
+  required_fields:
+    - jil_field:   "box_name"
+      uac_field:   "name"
+      match_type:  "exact"
+      severity:    "fail"
+      description: "BOX name must match workflow name exactly"
+
+    - jil_field:   "job_type"
+      uac_field:   "type"
+      match_type:  "type_map"
+      severity:    "fail"
+      description: "BOX must map to workflow type"
+
+    - jil_field:   "members"
+      uac_field:   "workflow_vertices"
+      match_type:  "exists"
+      severity:    "fail"
+      description: "All BOX member jobs must be present as workflow vertices"
+
+  soft_fields:
+    - jil_field:   "condition"
+      uac_field:   "workflow_edges"
+      match_type:  "condition"
+      severity:    "fail"
+      description: "Dependency conditions between member jobs must be preserved"
+
+    - jil_field:   "start_times"
+      uac_field:   "triggers"
+      match_type:  "schedule"
+      severity:    "fail"
+      description: "BOX schedule must have a corresponding trigger in UAC"
+
+    - jil_field:   "run_calendar"
+      uac_field:   "triggers"
+      match_type:  "exists"
+      severity:    "review"
+      description: "Calendar must be attached to workflow trigger"
+
+    - jil_field:   "exclude_calendar"
+      uac_field:   "N/A"
+      match_type:  "exists"
+      severity:    "review"
+      always_review: true
+      description: "exclude_calendar has no direct UAC equivalent"
+
+    - jil_field:   "alarm_if_fail"
+      uac_field:   "failureAction"
+      match_type:  "bool"
+      severity:    "review"
+      description: "BOX failure alarm should be configured at workflow level"
+
+    - jil_field:   "must_complete_times"
+      uac_field:   "lateFinish"
+      match_type:  "exists"
+      severity:    "fail"
+      description: "BOX must_complete_times must map to workflow Late Finish"
+
+# ---------------------------------------------------------------------------
+# FW (File Watcher) → taskFileMonitor (Agent File Monitor)
+# ---------------------------------------------------------------------------
+FW:
+  required_fields:
+    - jil_field:   "job_name"
+      uac_field:   "name"
+      match_type:  "exact"
+      severity:    "fail"
+      description: "Job name must match exactly"
+
+    - jil_field:   "job_type"
+      uac_field:   "type"
+      match_type:  "type_map"
+      severity:    "fail"
+      description: "FW must map to taskFileMonitor (not taskUnix, not taskFileMonitorRemote)"
+
+    - jil_field:   "watch_file"
+      uac_field:   "filename"
+      match_type:  "normalised"
+      severity:    "fail"
+      description: "Watch file path / pattern must be preserved"
+
+    - jil_field:   "machine"
+      uac_field:   "agent"
+      match_type:  "exists"
+      severity:    "fail"
+      description: "Agent must be specified for Agent File Monitor"
+
+  soft_fields:
+    - jil_field:   "watch_interval"
+      uac_field:   "scanInterval"
+      match_type:  "numeric"
+      severity:    "review"
+      description: "Scan interval (in seconds) should match"
+
+    - jil_field:   "watch_minimum_size"
+      uac_field:   "minimumFileSize"
+      match_type:  "numeric"
+      severity:    "review"
+      description: "Minimum file size should match"
+
+    - jil_field:   "alarm_if_fail"
+      uac_field:   "failureAction"
+      match_type:  "bool"
+      severity:    "review"
+      description: "Failure alarm should be configured"
+
+    - jil_field:   "condition"
+      uac_field:   "successCheckCondition"
+      match_type:  "condition"
+      severity:    "fail"
+      description: "Dependency conditions must be preserved"
+
+# ---------------------------------------------------------------------------
+# FT (File Trigger) → taskFileMonitorRemote (Remote File Monitor)
+# ---------------------------------------------------------------------------
+FT:
+  required_fields:
+    - jil_field:   "job_name"
+      uac_field:   "name"
+      match_type:  "exact"
+      severity:    "fail"
+      description: "Job name must match exactly"
+
+    - jil_field:   "job_type"
+      uac_field:   "type"
+      match_type:  "type_map"
+      severity:    "fail"
+      description: "FT must map to taskFileMonitorRemote (uses FTP server)"
+
+    - jil_field:   "watch_file"
+      uac_field:   "filename"
+      match_type:  "normalised"
+      severity:    "fail"
+      description: "Watch file path / pattern must be preserved"
+
+  soft_fields:
+    - jil_field:   "watch_interval"
+      uac_field:   "scanInterval"
+      match_type:  "numeric"
+      severity:    "review"
+      description: "Scan interval should match"
+
+    - jil_field:   "alarm_if_fail"
+      uac_field:   "failureAction"
+      match_type:  "bool"
+      severity:    "review"
+      description: "Failure alarm should be configured"
+
+    - jil_field:   "condition"
+      uac_field:   "successCheckCondition"
+      match_type:  "condition"
+      severity:    "fail"
+      description: "Dependency conditions must be preserved"

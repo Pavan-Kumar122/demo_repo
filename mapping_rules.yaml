@@ -1,0 +1,170 @@
+# mapping_rules.yaml
+# -------------------
+# Official Autosys → Stonebranch UAC mapping rules.
+# Used by validate_jobs.py as the single source of truth.
+# Based on official Stonebranch UAC documentation.
+
+# ---------------------------------------------------------------------------
+# Job Type Mapping: Autosys → UAC Task Type
+# ---------------------------------------------------------------------------
+job_type_mapping:
+  CMD:
+    stonebranch_type_linux:   "taskUnix"
+    stonebranch_type_windows: "taskWindows"
+    detect_os_by: "machine_name"        # Inspect machine field to determine OS
+    windows_keywords:                   # If machine name contains any of these → Windows task
+      - "win"
+      - "wnd"
+      - "windows"
+      - "w2k"
+      - "w32"
+      - "w64"
+      - "mssql"
+    default_os: "linux"                 # When OS cannot be determined, assume Linux
+
+  BOX:
+    stonebranch_type: "workflow"
+
+  FW:                                   # File Watcher — local/agent machine
+    stonebranch_type: "taskFileMonitor"
+    trigger_type:     "triggerFileMonitor"
+    description: "Agent File Monitor — monitors file on a specific remote machine via Universal Agent"
+
+  FT:                                   # File Trigger — remote via FTP
+    stonebranch_type: "taskFileMonitorRemote"
+    trigger_type:     "triggerFileMonitor"
+    description: "Remote File Monitor — monitors file on a remote machine where FTP server is running"
+
+# ---------------------------------------------------------------------------
+# Trigger Type Mapping: Autosys schedule fields → UAC Trigger types
+# ---------------------------------------------------------------------------
+trigger_mapping:
+  start_times_simple:   "triggerTime"       # Specific time e.g. "02:30"
+  start_times_cron:     "triggerCron"       # Cron-style e.g. "0 2 * * 1-5"
+  file_event:           "triggerFileMonitor"
+  one_time:             "triggerTemporary"  # Single date/time, ad-hoc
+  task_monitor_event:   "triggerTaskMonitor"
+  variable_event:       "triggerVariableMonitor"
+  composite_event:      "triggerComposite"
+
+  # How to detect cron vs simple time in JIL
+  cron_detection_pattern: "\\*|/|,"        # If start_times contains these → Cron trigger
+
+# ---------------------------------------------------------------------------
+# Dependency Condition Mapping: Autosys → UAC
+# ---------------------------------------------------------------------------
+dependency_mapping:
+  success:
+    uac_equivalent: "Success"
+    status: "direct"                    # Clean 1:1 mapping
+    review_required: false
+
+  failure:
+    uac_equivalent: "Failure"
+    status: "direct"
+    review_required: false
+
+  terminated:
+    uac_equivalent: "Cancelled"
+    status: "direct"
+    review_required: false
+
+  exitcode:
+    uac_equivalent: "Exit Code(s)"
+    status: "direct"
+    review_required: false
+
+  notrunning:
+    uac_equivalent: "Success/Failure"   # No exact UAC equivalent
+    status: "approximate"
+    review_required: true
+    review_note: "AutoSys 'notrunning' has no direct UAC equivalent. Mapped to Success/Failure combined. Verify this is the intended behaviour."
+
+  done:
+    uac_equivalent: "Success/Failure"   # No exact UAC equivalent
+    status: "approximate"
+    review_required: true
+    review_note: "AutoSys 'done' (success OR failure) has no direct UAC equivalent. Mapped to Success/Failure combined. Verify this is the intended behaviour."
+
+# ---------------------------------------------------------------------------
+# Alarm / Notification Mapping: Autosys → UAC
+# ---------------------------------------------------------------------------
+alarm_mapping:
+  alarm_if_fail:
+    uac_equivalent: "failureAction"
+    uac_action_type: "Email Notification or SNMP Notification"
+    severity: "review"                  # Missing = REVIEW (not hard fail)
+
+  alarm_if_terminated:
+    uac_equivalent: "cancelledAction"
+    uac_action_type: "Email Notification or SNMP Notification"
+    severity: "review"
+
+  max_run_alarm:
+    uac_equivalent: "lateFinishDuration"
+    uac_action_type: "Late Finish + Action"
+    severity: "review"
+
+  min_run_alarm:
+    uac_equivalent: "earlyFinishDuration"
+    uac_action_type: "Early Finish + Action"
+    severity: "review"
+
+  must_start_times:
+    uac_equivalent: "lateStart"
+    uac_action_type: "Late Start + Action"
+    severity: "fail"                    # Missing = hard FAIL (this is a business SLA)
+
+  must_complete_times:
+    uac_equivalent: "lateFinish"
+    uac_action_type: "Late Finish + Action"
+    severity: "fail"                    # Missing = hard FAIL
+
+# ---------------------------------------------------------------------------
+# Job State → UAC Task Instance Status Mapping
+# ---------------------------------------------------------------------------
+state_mapping:
+  ACTIVATED:    "WAITING"
+  FAILURE:      "FAILED"
+  INACTIVE:     "DEFINED"
+  PEND_MACH:    "EXECUTION WAIT"
+  ON_HOLD:      "HELD"
+  ON_ICE:       "SIMULATE_MODE"         # No direct UAC equivalent
+  ON_NOEXEC:    "SIMULATE_MODE"         # No direct UAC equivalent
+  QUE_WAIT:     "QUEUED"
+  RESTART:      "START FAILURE"
+  RESWAIT:      "RESOURCE WAIT"
+  RUNNING:      "RUNNING"
+  STARTING:     "STARTED"
+  SUCCESS:      "SUCCESS"
+  TERMINATED:   "CANCELLED"
+  WAIT_REPLY:   "APPROVAL REQUIRED"
+
+# ---------------------------------------------------------------------------
+# Calendar Mapping
+# ---------------------------------------------------------------------------
+calendar_mapping:
+  run_calendar:
+    uac_equivalent: "Calendar (attached to Trigger)"
+    status: "direct"
+    note: "A UAC Calendar object must be created and attached to the trigger."
+
+  exclude_calendar:
+    uac_equivalent: "N/A"
+    status: "no_direct_equivalent"
+    review_required: true
+    review_note: "AutoSys 'exclude_calendar' has no direct UAC equivalent. Must construct a Calendar in UAC selecting all days but explicitly excluding the calendar days. Always flag for REVIEW."
+
+  days_of_week:
+    uac_equivalent: "Trigger day restriction"
+    status: "direct"
+    note: "Map to trigger's day-of-week constraint."
+
+# ---------------------------------------------------------------------------
+# Variable Mapping
+# ---------------------------------------------------------------------------
+variable_mapping:
+  global_variable:
+    autosys_syntax: "$$VARIABLE_NAME or v(VARIABLE_NAME)"
+    uac_equivalent: "UAC Variables"
+    note: "All global variables referenced in JIL must exist as Variables in UAC."

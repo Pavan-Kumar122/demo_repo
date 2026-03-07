@@ -1,0 +1,20 @@
+# sb_config.yaml
+# ---------------
+# Stonebranch UAC connection configuration.
+#
+# SECURITY: Never commit real credentials to source control.
+# Set credentials via environment variables instead:
+#   export SB_USERNAME=your_username
+#   export SB_PASSWORD=your_password
+#   export SB_BASE_URL=https://your-uac-server:8443/uc
+#
+# Environment variables always override the values below.
+
+stonebranch:
+  base_url: "https://your-uac-server:8443/uc"   # Set via SB_BASE_URL env var
+
+  username: "${SB_USERNAME}"   # Set via environment variable
+  password: "${SB_PASSWORD}"   # Set via environment variable
+
+  verify_ssl: true    # Set to false only for self-signed certs in dev/test
+  timeout:    30      # HTTP request timeout in seconds

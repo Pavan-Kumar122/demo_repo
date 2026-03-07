@@ -1,0 +1,321 @@
+.github/copilot-instructions.md
+
+# Autosys → Stonebranch Migration — Copilot Global Instructions
+
+This repo contains Autosys JIL jobs and their Stonebranch UAC conversions.
+- JIL source files: /autosys/
+- Stonebranch JSON files: /stonebranch/
+- Skill instructions: /skills/
+- Python scripts: /scripts/
+- Mapping/config rules: /config/
+
+## Key Terminology (AutoSys → UAC)
+- CMD job → Linux/Unix Task (taskUnix) or Windows Task (taskWindows)
+- BOX job → Workflow
+- FW job  → Agent File Monitor (taskFileMonitor)
+- FT job  → Remote File Monitor (taskFileMonitorRemote)
+- start_times → Time Trigger or Cron Trigger
+- run_calendar → Calendar (attached to Trigger)
+- alarm_if_fail → Failure Action (Email/SNMP Notification)
+- Global Variables → Variables
+
+## When user says "validate jobs" → use skills/validate-jobs.md
+## When user says "create task" → use skills/create-task.md
+## When user says "create trigger" → use skills/create-trigger.md
+## When user says "create workflow" → use skills/create-workflow.md
+## When user says "fetch task" → use skills/fetch-task.md
+## When user says "launch job" → use skills/launch-job.md
+
+Never hardcode credentials. Always read from config/sb_config.yaml + env vars.
+Always load config/mapping_rules.yaml for job type context before validating.
+
+
+
+skills/validate-jobs.md
+
+# Skill: Validate Autosys → Stonebranch Jobs
+
+## Trigger phrases
+"validate jobs", "check conversion", "run validation", "compare jil and json",
+"check all jobs", "validate migrated jobs"
+
+## Steps
+1. Run: python scripts/validate_jobs.py
+   - Parses all .jil files from /autosys/
+   - Parses all .json files from /stonebranch/
+   - Matches jobs by name (case-insensitive)
+   - Validates fields per job type using config/mapping_rules.yaml
+   - Checks job type mapping (CMD→taskUnix/taskWindows, BOX→workflow, FW→taskFileMonitor, FT→taskFileMonitorRemote)
+   - Checks dependency condition mapping (success, failure, notrunning, done, terminated)
+   - Checks trigger/schedule presence if start_times exists in JIL
+   - Checks alarm mappings (alarm_if_fail, max_run_alarm, must_complete_times)
+   - Assigns each job: PASS / REVIEW / FAIL with specific reasons
+
+2. Run: python scripts/generate_report.py
+3. Open reports/validation_report.md and summarize to user:
+   - Total counts: PASS / REVIEW / FAIL
+   - Top 3 most common failure reasons
+   - Jobs that are completely missing from Stonebranch
+
+## Job types handled
+CMD → taskUnix or taskWindows
+BOX → workflow
+FW  → taskFileMonitor (Agent File Monitor)
+FT  → taskFileMonitorRemote (Remote File Monitor)
+
+
+skills/create-task.md
+
+# Skill: Create a Stonebranch Task via REST API
+
+## Trigger phrases
+"create a task", "add a new task", "create linux task", "create windows task",
+"create file monitor", "push job to UAC"
+
+## Steps
+1. Ask user for:
+   - Task name
+   - Task type: Linux/Unix (taskUnix), Windows (taskWindows), 
+     Agent File Monitor (taskFileMonitor), Remote File Monitor (taskFileMonitorRemote),
+     Workflow, Timer, SQL, Email, Manual, Approval, Task Monitor, etc.
+   - Agent name (Universal Agent name in UAC)
+   - Command/script path (for Linux/Unix or Windows tasks)
+   - Credentials alias (if applicable)
+   - Description (optional)
+
+2. Run: python scripts/sb_api.py create-task \
+     --name <name> --type <type> --agent <agent> --command <command>
+
+3. Report back: Task ID, status from UAC response.
+
+## API
+POST /resources/task
+Refer to config/mapping_rules.yaml for payload structure per type.
+
+
+skills/create-trigger.md
+
+# Skill: Create a Stonebranch Trigger / Schedule
+
+## Trigger phrases
+"create trigger", "add schedule", "set up cron", "create time trigger",
+"add a cron trigger", "schedule a task"
+
+## Trigger types available in UAC
+- Time: specify dates and times → use for direct start_times migration
+- Cron: use Cron syntax → use when AutoSys had cron-style schedules
+- Agent File Monitor: trigger on file event → use for FW job triggers
+- Temporary: one-time trigger → use for ad-hoc testing
+- Composite: multiple event types combined
+- Task Monitor / Variable Monitor / Universal Monitor
+
+## Steps
+1. Ask user for: trigger name, trigger type, associated task/workflow,
+   schedule (cron expression or time), timezone, active/inactive status.
+2. Run: python scripts/sb_api.py create-trigger \
+     --name <name> --type <type> --task <task> --cron <expr>
+3. Report back trigger ID and status.
+
+## API
+POST /resources/trigger
+
+
+skills/create-workflow.md
+
+# Skill: Create a Stonebranch Workflow (BOX equivalent)
+
+## Trigger phrases
+"create workflow", "create a BOX", "set up workflow with dependencies",
+"add workflow", "migrate BOX job"
+
+## Steps
+1. Ask user for:
+   - Workflow name
+   - List of task names to include as vertices
+   - Dependency conditions between tasks (success/failure/success-failure)
+   - Entry condition if any
+2. Run: python scripts/sb_api.py create-workflow \
+     --name <name> --tasks <task1,task2,task3>
+3. Report back workflow ID and status.
+
+## Dependency note
+AutoSys "success" → UAC "Success"
+AutoSys "failure" → UAC "Failure"  
+AutoSys "done" / "notrunning" → UAC "Success/Failure" (flag for review)
+
+## API
+POST /resources/workflow
+
+
+
+skills/fetch-task.md
+
+# Skill: Fetch a Task from Stonebranch UAC
+
+## Trigger phrases
+"fetch task", "get task details", "show me task X", "look up task",
+"what does task X look like in UAC"
+
+## Steps
+1. Ask user for task name or task ID.
+2. Run: python scripts/sb_api.py fetch-task --name <task_name>
+3. Display returned JSON in readable format.
+
+## API
+GET /resources/task?taskname=<name>
+
+
+
+skills/launch-job.md
+# Skill: Launch / Trigger a Job Manually in UAC
+
+## Trigger phrases
+"launch job", "run task", "trigger now", "manually kick off", "test task X"
+
+## Steps
+1. Ask user for task name or task ID.
+2. ALWAYS confirm before launching:
+   "Confirm: launch <task_name> in Stonebranch UAC? (yes/no)"
+3. After confirmation, run:
+   python scripts/sb_api.py launch-job --name <task_name>
+4. Report back: Task Instance ID, initial status (Defined → Waiting → Started → Running).
+
+## Status lifecycle to explain to user
+Defined → Waiting → Started → Running → Success / Failed / Cancelled
+
+## API
+POST /ops/task/launch
+Body: { "name": "<task_name>" }
+
+
+
+
+
+reports/validation_report.md
+
+# Autosys → Stonebranch UAC Validation Report
+Generated: 2025-01-15 10:42:00
+Source JIL files: /autosys/
+Stonebranch JSON files: /stonebranch/
+
+---
+
+## Summary
+
+| Status | Count | % of Total |
+|--------|-------|------------|
+| ✅ PASS | 420 | 82.0% |
+| ⚠️ REVIEW | 62 | 12.1% |
+| ❌ FAIL | 30 | 5.9% |
+| **Total** | **512** | **100%** |
+
+**Jobs in JIL not found in Stonebranch:** 4  
+**Jobs in Stonebranch not found in JIL (orphans):** 2
+
+---
+
+## ❌ FAILED Jobs — Manual Fix Required
+
+| # | Job Name | Job Type | UAC Type Found | Issue | JIL Value | Stonebranch Value | Field |
+|---|---|---|---|---|---|---|---|
+| 1 | `fin_eod_load` | CMD | `workflow` | Wrong task type — should be taskUnix | `CMD` | `workflow` | `type` |
+| 2 | `file_watch_inbound` | FW | `taskUnix` | Wrong task type — should be taskFileMonitor | `FW` | `taskUnix` | `type` |
+| 3 | `data_archive_box` | BOX | `workflow` | Member job `data_clean` missing from workflow | *(member list)* | *(vertices)* | `vertices` |
+| 4 | `nightly_etl` | CMD | — | **Not found in Stonebranch — not converted** | — | — | — |
+
+---
+
+## ⚠️ REVIEW Jobs — Check & Confirm
+
+| # | Job Name | Job Type | Concern | JIL Value | Stonebranch Value | Field |
+|---|---|---|---|---|---|---|
+| 1 | `daily_report` | CMD | Schedule format differs | `00:30` | `0 30 * * *` | `start_times` |
+| 2 | `etl_transfer` | CMD | Script path changed | `/app/v1/etl.sh` | `/app/v2/etl.sh` | `command` |
+| 3 | `box_weekly` | BOX | `exclude_calendar` has no direct UAC mapping | `HOLIDAYS` | *(none)* | `excludeCalendar` |
+| 4 | `mon_fin_jobs` | FW | `notrunning` condition has no exact UAC equivalent | `notrunning` | `Success/Failure` | `condition` |
+| 5 | `data_load_cmd` | CMD | `alarm_if_fail` set but no failure action in UAC | `1` | *(none)* | `failureAction` |
+
+---
+
+## ✅ PASSED Jobs
+
+| Job Name | Job Type | UAC Type | Trigger | Notes |
+|---|---|---|---|---|
+| `nightly_backup` | CMD | `taskUnix` | Time Trigger ✅ | All fields matched |
+| `weekly_report_box` | BOX | `workflow` | Cron Trigger ✅ | All members present |
+| `file_watcher_orders` | FW | `taskFileMonitor` | Agent File Monitor ✅ | Path and agent matched |
+...
+
+
+
+
+config/sb_config.yaml
+
+# DO NOT COMMIT WITH REAL CREDENTIALS — use environment variables
+stonebranch:
+  base_url: "https://your-uac-server:8443/uc"
+  username: "${SB_USERNAME}"
+  password: "${SB_PASSWORD}"
+  verify_ssl: true
+  timeout: 30
+
+
+  config/mapping_rules.yaml
+
+  job_type_mapping:
+  CMD:
+    stonebranch_type_unix: "taskUnix"
+    stonebranch_type_windows: "taskWindows"
+    detect_by: "machine_os"           # Detect OS from machine field
+    
+  BOX:
+    stonebranch_type: "workflow"
+    
+  FW:
+    stonebranch_type: "taskFileMonitor"    # Agent File Monitor
+    trigger_type: "triggerFileMonitor"
+    
+  FT:
+    stonebranch_type: "taskFileMonitorRemote"   # Remote File Monitor (FTP)
+
+trigger_mapping:
+  start_times_simple: "triggerTime"
+  start_times_cron: "triggerCron"
+  file_event: "triggerFileMonitor"
+  one_time: "triggerTemporary"
+  
+dependency_mapping:
+  success: "Success"
+  failure: "Failure"
+  notrunning: "REVIEW_REQUIRED"    # No direct UAC equivalent
+  done: "REVIEW_REQUIRED"          # No direct UAC equivalent
+  terminated: "Cancelled"
+  
+alarm_mapping:
+  alarm_if_fail: "failureAction"
+  alarm_if_terminated: "cancelledAction"
+  max_run_alarm: "lateFinishDuration"
+  min_run_alarm: "earlyFinishDuration"
+  must_start_times: "lateStart"
+  must_complete_times: "lateFinish"
+
+
+
+config/state_mapping.yaml
+
+job_state_mapping:
+  ACTIVATED: "WAITING"
+  FAILURE: "FAILED"
+  INACTIVE: "DEFINED"
+  PEND_MACH: "EXECUTION WAIT"
+  ON_HOLD: "HELD"
+  ON_ICE: "SIMULATE_MODE"         # No direct equivalent
+  ON_NOEXEC: "SIMULATE_MODE"      # No direct equivalent
+  QUE_WAIT: "QUEUED"
+  RESTART: "START FAILURE"
+  RESWAIT: "RESOURCE WAIT"
+  RUNNING: "RUNNING"
+  STARTING: "STARTED"
+  SUCCESS: "SUCCESS"
+  TERMINATED: "CANCELLED"
+  WAIT_REPLY: "APPROVAL REQUIRED"

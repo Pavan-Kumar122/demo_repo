@@ -26,21 +26,16 @@ import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.ImportResource;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.annotation.Primary;
 
 import javax.sql.DataSource;
 
 /**
- * Spring Batch job definition for SP Monitoring Lucene Search Index creation.
+ * Spring Batch job configuration for SP Monitoring Search Index.
  * <p>
- * This is the main entry point for the batch pipeline:
- * <ol>
- *   <li>Reads SP monitoring data from the database (JDBC cursor).</li>
- *   <li>Writes the data into a Lucene search index via {@code SPMonitoringIndexDataWriter}.</li>
- * </ol>
- * Triggered externally by AutoSys — no internal scheduling.
+ * Reads SP monitoring data from the database and writes it into a Lucene
+ * search index. Triggered externally by AutoSys — no internal scheduling.
  * </p>
- *
- * @see SpMonitoringLuceneConfig for Lucene infrastructure beans used by this job.
  */
 @Lazy
 @Configuration("spMonitoringSearchIndexJobConfig")
@@ -51,6 +46,9 @@ import javax.sql.DataSource;
         @ComponentScan("com.ubs.spasa.batch.core"),
         @ComponentScan("com.ubs.spasa.batch.spmonitoringsearch"),
         @ComponentScan("com.ubs.spasa.spmonitoringsearch"),
+        // Scan productsearch.lucene but EXCLUDE the two classes that need ProductService
+        // (not available in SP Monitoring context). ProductSearchInputIterator is kept —
+        // it's the SearchInputIterator impl needed by StandardLuceneIndexCreator.
         @ComponentScan(
                 value = "com.ubs.spasa.productsearch.lucene",
                 excludeFilters = @ComponentScan.Filter(
@@ -64,6 +62,8 @@ import javax.sql.DataSource;
 public class SpMonitoringSearchIndexJob {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SpMonitoringSearchIndexJob.class);
+
+    private static final String CONFIG_NAME = "sp_monitoring_search";
 
     @Autowired
     private JobBuilderFactory jobs;
@@ -93,6 +93,49 @@ public class SpMonitoringSearchIndexJob {
     @Value("${sp.monitoring.batch.fetch-size:5000}")
     private int fetchSize;
 
+    // ── Routing Lucene Config Service (primary) ───────────────────────────────
+
+    @Bean
+    @Primary
+    public SPMonitoringLuceneConfigServiceImpl spMonitoringLuceneConfigService(
+            @Qualifier("luceneConfigServiceImpl") LuceneConfigService delegate,
+            SPMonitoringSearchService spMonitoringSearchService) {
+        return new SPMonitoringLuceneConfigServiceImpl(delegate, spMonitoringSearchService);
+    }
+
+    // ── Lucene Index Creator & Reader ─────────────────────────────────────────
+
+    @Bean
+    public SPMonitoringLuceneIndexCreator spMonitoringLuceneCreator() {
+        SPMonitoringLuceneIndexCreator creator = new SPMonitoringLuceneIndexCreator();
+        creator.setConfigName(CONFIG_NAME);
+        return creator;
+    }
+
+    @Bean
+    public StandardLuceneIndexReader spMonitoringLuceneReader() {
+        StandardLuceneIndexReader reader = new StandardLuceneIndexReader();
+        reader.setConfigName(CONFIG_NAME);
+        return reader;
+    }
+
+    // ── Row Mapper, Writer & Validator ────────────────────────────────────────
+
+    @Bean
+    public SPMonitoringBeanRowMapper spMonitoringBeanRowMapper() {
+        return new SPMonitoringBeanRowMapper();
+    }
+
+    @Bean
+    public SPMonitoringIndexDataWriter spMonitoringIndexDataWriter() {
+        return new SPMonitoringIndexDataWriter();
+    }
+
+    @Bean
+    public SPMonitoringIndexJobParamValidator spMonitoringIndexJobParamValidator() {
+        return new SPMonitoringIndexJobParamValidator();
+    }
+
     // ── Item Reader (step-scoped) ─────────────────────────────────────────────
 
     @Bean
@@ -109,6 +152,15 @@ public class SpMonitoringSearchIndexJob {
         reader.setRowMapper(spMonitoringBeanRowMapper());
         reader.setFetchSize(fetchSize);
         return reader;
+    }
+
+    // ── Job Context Support ───────────────────────────────────────────────────
+
+    @Bean
+    public JobContextSupport jobContextSupport() {
+        JobContextSupport support = new JobContextSupport();
+        support.setJobName(JobNames.SP_MONITORING_SEARCH_INDEX_JOB);
+        return support;
     }
 
     // ── Step & Job ────────────────────────────────────────────────────────────
@@ -151,31 +203,5 @@ public class SpMonitoringSearchIndexJob {
                         jobExecution.getId(), jobExecution.getStatus());
             }
         };
-    }
-
-    // ── Job Context Support ───────────────────────────────────────────────────
-
-    @Bean
-    public JobContextSupport jobContextSupport() {
-        JobContextSupport support = new JobContextSupport();
-        support.setJobName(JobNames.SP_MONITORING_SEARCH_INDEX_JOB);
-        return support;
-    }
-
-    // ── Row Mapper, Writer & Validator (kept here for co-location with Step) ─
-
-    @Bean
-    public SPMonitoringBeanRowMapper spMonitoringBeanRowMapper() {
-        return new SPMonitoringBeanRowMapper();
-    }
-
-    @Bean
-    public SPMonitoringIndexDataWriter spMonitoringIndexDataWriter() {
-        return new SPMonitoringIndexDataWriter();
-    }
-
-    @Bean
-    public SPMonitoringIndexJobParamValidator spMonitoringIndexJobParamValidator() {
-        return new SPMonitoringIndexJobParamValidator();
     }
 }

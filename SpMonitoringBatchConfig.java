@@ -55,12 +55,7 @@ public class SpMonitoringBatchConfig {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SpMonitoringBatchConfig.class);
 
-    private static final String ITEM_READER_SQL =
-            "SELECT t1.product_id, t1.product_name, t1.monitoring_status, " +
-            "       t1.last_updated, t2.universe_value AS SPASA_UNIVERSE " +
-            "FROM spasa_pymon_data.mv_pymon_tableau_data t1 " +
-            "JOIN spasa_ods.tbl_product_universe t2 " +
-            "ON t1.product_id = t2.product_id";
+    private static final String ITEM_READER_SQL =;
     // ^^^ TODO: Replace the column list above with the actual columns
     //     mapped by SPMonitoringBeanRowMapper. Avoid SELECT t1.* in batch jobs.
 

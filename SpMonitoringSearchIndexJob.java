@@ -7,11 +7,10 @@ import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.StepScope;
-import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.listener.JobExecutionListenerSupport;
-import org.springframework.batch.core.repository.JobRepository;
-import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.database.JdbcCursorItemReader;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,7 +20,7 @@ import org.springframework.context.annotation.ComponentScans;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
-import org.springframework.transaction.PlatformTransactionManager;
+
 
 import javax.sql.DataSource;
 
@@ -60,12 +59,16 @@ public class SpMonitoringSearchIndexJob {
     private static final Logger LOGGER = LoggerFactory.getLogger(SpMonitoringSearchIndexJob.class);
 
     private static final String ITEM_READER_SQL =
-            ;
+            "SELECT t1.product_id, t1.product_name, t1.monitoring_status, " +
+            "       t1.last_updated, t2.universe_value AS SPASA_UNIVERSE " +
+            "FROM spasa_pymon_data.mv_pymon_tableau_data t1 " +
+            "JOIN spasa_ods.tbl_product_universe t2 " +
+            "ON t1.product_id = t2.product_id";
     // ^^^ TODO: Replace the column list above with the actual columns
     //     mapped by SPMonitoringBeanRowMapper. Avoid SELECT t1.* in batch jobs.
 
-    private final JobRepository jobRepository;
-    private final PlatformTransactionManager transactionManager;
+    private final JobBuilderFactory jobBuilderFactory;
+    private final StepBuilderFactory stepBuilderFactory;
     private final DataSource dataSource;
     private final StepExecutionListener stepExceptionsRecorder;
     private final StepExecutionListener jobStatsRecorder;
@@ -86,8 +89,8 @@ public class SpMonitoringSearchIndexJob {
      * {@code copyableAnnotations}.
      */
     public SpMonitoringSearchIndexJob(
-            JobRepository jobRepository,
-            PlatformTransactionManager transactionManager,
+            JobBuilderFactory jobBuilderFactory,
+            StepBuilderFactory stepBuilderFactory,
             DataSource dataSource,
             @Qualifier("stepExceptionsRecorder") StepExecutionListener stepExceptionsRecorder,
             @Qualifier("jobStatsRecorder") StepExecutionListener jobStatsRecorder,
@@ -95,8 +98,8 @@ public class SpMonitoringSearchIndexJob {
             SPMonitoringBeanRowMapper spMonitoringBeanRowMapper,
             SPMonitoringIndexDataWriter spMonitoringIndexDataWriter,
             SPMonitoringIndexJobParamValidator spMonitoringIndexJobParamValidator) {
-        this.jobRepository = jobRepository;
-        this.transactionManager = transactionManager;
+        this.jobBuilderFactory = jobBuilderFactory;
+        this.stepBuilderFactory = stepBuilderFactory;
         this.dataSource = dataSource;
         this.stepExceptionsRecorder = stepExceptionsRecorder;
         this.jobStatsRecorder = jobStatsRecorder;
@@ -123,8 +126,8 @@ public class SpMonitoringSearchIndexJob {
 
     @Bean
     public Step spMonitoringIndexTask() {
-        return new StepBuilder("spMonitoringIndexTask", jobRepository)
-                .<SPMonitoringBean, SPMonitoringBean>chunk(chunkSize, transactionManager)
+        return stepBuilderFactory.get("spMonitoringIndexTask")
+                .<SPMonitoringBean, SPMonitoringBean>chunk(chunkSize)
                 .reader(itemReader())
                 .writer(spMonitoringIndexDataWriter)
                 .listener(stepExceptionsRecorder)
@@ -136,7 +139,7 @@ public class SpMonitoringSearchIndexJob {
 
     @Bean
     public Job spMonitoringSearchIndexJob() {
-        return new JobBuilder(JobNames.SP_MONITORING_SEARCH_INDEX_JOB, jobRepository)
+        return jobBuilderFactory.get(JobNames.SP_MONITORING_SEARCH_INDEX_JOB)
                 .incrementer(new RunIdIncrementer())
                 .validator(spMonitoringIndexJobParamValidator)
                 .start(spMonitoringIndexTask())
